@@ -8,7 +8,7 @@ export async function GET() {
     return NextResponse.json({ connected: false });
   }
 
-  const user = getUserById(userId);
+  const user = await getUserById(userId);
   if (!user || !user.access_token) {
     return NextResponse.json({ connected: false });
   }

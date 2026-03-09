@@ -6,11 +6,11 @@ export async function GET() {
   const userId = getSession();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const jobs = getJobsByUser(userId);
-  const jobsWithUpdates = jobs.map(job => ({
+  const jobs = await getJobsByUser(userId);
+  const jobsWithUpdates = await Promise.all(jobs.map(async job => ({
     ...job,
-    updates: getJobUpdates(job.id),
-  }));
+    updates: await getJobUpdates(job.id),
+  })));
 
   return NextResponse.json({ jobs: jobsWithUpdates });
 }
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const job = createJob({
+  const job = await createJob({
     user_id: userId,
     company,
     position,

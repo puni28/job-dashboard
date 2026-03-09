@@ -16,7 +16,7 @@ export async function POST() {
   const userId = getSession();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const user = getUserById(userId);
+  const user = await getUserById(userId);
   if (!user?.access_token) {
     return NextResponse.json({ error: 'Email not connected' }, { status: 400 });
   }
@@ -31,14 +31,14 @@ export async function POST() {
     emails.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     for (const email of emails) {
-      if (isEmailProcessed(userId, email.id)) {
+      if (await isEmailProcessed(userId, email.id)) {
         skipped++;
         continue;
       }
 
       const classification = classifyEmail(email);
       if (!classification.isJobRelated) {
-        markEmailProcessed(userId, email.id);
+        await markEmailProcessed(userId, email.id);
         skipped++;
         continue;
       }
@@ -47,7 +47,7 @@ export async function POST() {
       const newStatus = getStatusFromEmailType(classification.emailType);
 
       // Check if we have an existing job for this thread
-      const existingJob = findJobByThreadId(userId, email.threadId);
+      const existingJob = await findJobByThreadId(userId, email.threadId);
 
       if (existingJob) {
         // Update status only if it's a "higher priority" status
@@ -55,13 +55,13 @@ export async function POST() {
         const newPriority = STATUS_PRIORITY[newStatus] ?? 0;
 
         if (newPriority > currentPriority || classification.emailType === 'rejected') {
-          updateJob(existingJob.id, {
+          await updateJob(existingJob.id, {
             status: newStatus,
             last_updated: emailDate,
           });
         }
 
-        addJobUpdate({
+        await addJobUpdate({
           job_id: existingJob.id,
           update_type: getUpdateLabel(classification.emailType),
           message: email.snippet,
@@ -73,14 +73,14 @@ export async function POST() {
       } else if (classification.emailType === 'application' || classification.emailType === 'update') {
         // Only create new jobs from application confirmations
         // For updates without a matching thread, try to match by company name
-        const allJobs = getJobsByUser(userId);
+        const allJobs = await getJobsByUser(userId);
         const companyMatch = allJobs.find(j =>
           j.company.toLowerCase().includes(classification.company.toLowerCase()) ||
           classification.company.toLowerCase().includes(j.company.toLowerCase())
         );
 
         if (companyMatch && classification.emailType === 'update') {
-          addJobUpdate({
+          await addJobUpdate({
             job_id: companyMatch.id,
             update_type: getUpdateLabel(classification.emailType),
             message: email.snippet,
@@ -89,7 +89,7 @@ export async function POST() {
           });
           updated++;
         } else {
-          const job = createJob({
+          const job = await createJob({
             user_id: userId,
             company: classification.company,
             position: classification.position,
@@ -104,7 +104,7 @@ export async function POST() {
             notes: null,
           });
 
-          addJobUpdate({
+          await addJobUpdate({
             job_id: job.id,
             update_type: getUpdateLabel(classification.emailType),
             message: email.snippet,
@@ -116,7 +116,7 @@ export async function POST() {
         }
       } else {
         // Interview/offer/rejection email without matching thread — create job
-        const job = createJob({
+        const job = await createJob({
           user_id: userId,
           company: classification.company,
           position: classification.position,
@@ -131,7 +131,7 @@ export async function POST() {
           notes: null,
         });
 
-        addJobUpdate({
+        await addJobUpdate({
           job_id: job.id,
           update_type: getUpdateLabel(classification.emailType),
           message: email.snippet,
@@ -142,7 +142,7 @@ export async function POST() {
         added++;
       }
 
-      markEmailProcessed(userId, email.id);
+      await markEmailProcessed(userId, email.id);
     }
 
     return NextResponse.json({

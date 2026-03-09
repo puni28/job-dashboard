@@ -5,7 +5,7 @@ import { deleteUser } from '@/lib/db';
 export async function POST() {
   const userId = getSession();
   if (userId) {
-    deleteUser(userId);
+    await deleteUser(userId);
   }
   clearSession();
   return NextResponse.json({ success: true });

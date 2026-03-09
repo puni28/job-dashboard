@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const { email, accessToken, refreshToken, expiry } = await exchangeCodeForTokens(code);
-    const user = upsertUser(email, accessToken, refreshToken, expiry);
+    const user = await upsertUser(email, accessToken, refreshToken, expiry);
     setSession(user.id);
     return NextResponse.redirect(`${process.env.NEXTAUTH_URL}/?connected=true`);
   } catch (err) {
