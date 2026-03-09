@@ -38,7 +38,7 @@ export async function exchangeCodeForTokens(code: string) {
 }
 
 export async function getAuthenticatedClient(userId: number): Promise<OAuth2Client | null> {
-  const user = getUserById(userId);
+  const user = await getUserById(userId);
   if (!user || !user.access_token) return null;
 
   const client = createOAuth2Client();
