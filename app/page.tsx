@@ -95,7 +95,7 @@ export default function Home() {
     try {
       do {
         page++;
-        const res = await fetch('/api/sync', {
+        const res: Response = await fetch('/api/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pageToken }),
