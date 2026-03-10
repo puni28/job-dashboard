@@ -87,24 +87,44 @@ export default function Home() {
 
   const handleSync = async () => {
     setSyncing(true);
+    let totalAdded = 0;
+    let totalUpdated = 0;
+    let pageToken: string | null = null;
+    let page = 0;
+
     try {
-      const res = await fetch('/api/sync', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        await fetchJobs();
-        const { added, updated } = data.stats;
-        const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        setLastSynced(now);
-        if (added === 0 && updated === 0) {
-          showToast('Inbox synced — no new job emails found.', 'info');
-        } else {
-          showToast(
-            `Synced! ${added > 0 ? `${added} new job${added !== 1 ? 's' : ''} added` : ''}${added > 0 && updated > 0 ? ', ' : ''}${updated > 0 ? `${updated} updated` : ''}.`,
-            'success'
-          );
+      do {
+        page++;
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pageToken }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showToast(data.error ?? 'Sync failed. Please try again.', 'error');
+          return;
         }
+
+        totalAdded += data.stats.added;
+        totalUpdated += data.stats.updated;
+        pageToken = data.nextPageToken ?? null;
+
+        // Refresh jobs after each batch so the board updates progressively
+        await fetchJobs();
+      } while (pageToken);
+
+      const now = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      setLastSynced(now);
+
+      if (totalAdded === 0 && totalUpdated === 0) {
+        showToast('Inbox synced — no new job emails found.', 'info');
       } else {
-        showToast(data.error ?? 'Sync failed. Please try again.', 'error');
+        showToast(
+          `Synced! ${totalAdded > 0 ? `${totalAdded} new job${totalAdded !== 1 ? 's' : ''} added` : ''}${totalAdded > 0 && totalUpdated > 0 ? ', ' : ''}${totalUpdated > 0 ? `${totalUpdated} updated` : ''}.`,
+          'success'
+        );
       }
     } catch {
       showToast('Network error. Check your connection.', 'error');

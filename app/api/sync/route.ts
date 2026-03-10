@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { getUserById, isEmailProcessed, markEmailProcessed, findJobByThreadId, createJob, updateJob, addJobUpdate, getJobsByUser } from '@/lib/db';
 import { fetchJobEmails } from '@/lib/gmail';
@@ -12,7 +12,7 @@ const STATUS_PRIORITY: Record<string, number> = {
   Rejected: 5,
 };
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const userId = getSession();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -21,8 +21,16 @@ export async function POST() {
     return NextResponse.json({ error: 'Email not connected' }, { status: 400 });
   }
 
+  let pageToken: string | undefined;
   try {
-    const emails = await fetchJobEmails(userId, 150);
+    const body = await req.json();
+    pageToken = body.pageToken ?? undefined;
+  } catch {
+    pageToken = undefined;
+  }
+
+  try {
+    const { messages: emails, nextPageToken } = await fetchJobEmails(userId, pageToken);
     let added = 0;
     let updated = 0;
     let skipped = 0;
@@ -148,6 +156,7 @@ export async function POST() {
     return NextResponse.json({
       success: true,
       stats: { added, updated, skipped, total: emails.length },
+      nextPageToken,
     });
   } catch (err) {
     console.error('Sync error:', err);

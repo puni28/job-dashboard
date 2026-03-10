@@ -74,40 +74,42 @@ export type GmailMessage = {
   body: string;
 };
 
-export async function fetchJobEmails(userId: number, maxResults = 100): Promise<GmailMessage[]> {
+export type FetchEmailsResult = {
+  messages: GmailMessage[];
+  nextPageToken: string | null;
+};
+
+export async function fetchJobEmails(
+  userId: number,
+  pageToken?: string
+): Promise<FetchEmailsResult> {
   const client = await getAuthenticatedClient(userId);
-  if (!client) return [];
+  if (!client) return { messages: [], nextPageToken: null };
 
   const gmail = google.gmail({ version: 'v1', auth: client });
 
-  // Search query for job-related emails
-  const query = [
-    'subject:(application OR applied OR "thank you for applying" OR "we received your application" OR interview OR "job offer" OR offer OR rejected OR "not selected" OR "moving forward")',
-    'newer_than:90d',
-  ].join(' ');
+  // Search query for job-related emails — no date filter to get full history
+  const query =
+    'subject:(application OR applied OR "thank you for applying" OR "we received your application" OR interview OR "job offer" OR offer OR rejected OR "not selected" OR "moving forward")';
 
-  let allMessages: GmailMessage[] = [];
-  let pageToken: string | undefined;
+  const listRes = await gmail.users.messages.list({
+    userId: 'me',
+    q: query,
+    maxResults: 50,
+    pageToken,
+  });
 
-  do {
-    const listRes = await gmail.users.messages.list({
-      userId: 'me',
-      q: query,
-      maxResults: Math.min(maxResults - allMessages.length, 50),
-      pageToken,
-    });
+  const messages = listRes.data.messages || [];
+  const nextPageToken = listRes.data.nextPageToken || null;
 
-    const messages = listRes.data.messages || [];
-    pageToken = listRes.data.nextPageToken || undefined;
+  const fetched = await Promise.all(
+    messages.map(m => fetchMessage(gmail, m.id!))
+  );
 
-    const fetched = await Promise.all(
-      messages.map(m => fetchMessage(gmail, m.id!))
-    );
-
-    allMessages = [...allMessages, ...fetched.filter(Boolean) as GmailMessage[]];
-  } while (pageToken && allMessages.length < maxResults);
-
-  return allMessages;
+  return {
+    messages: fetched.filter(Boolean) as GmailMessage[],
+    nextPageToken,
+  };
 }
 
 async function fetchMessage(
