@@ -1,6 +1,31 @@
-import { neon } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-const sql = neon(process.env.DATABASE_URL!);
+let _sql: NeonQueryFunction<false, false> | null = null;
+
+function getSql(): NeonQueryFunction<false, false> {
+  if (!_sql) {
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+    _sql = neon(process.env.DATABASE_URL);
+  }
+  return _sql;
+}
+
+// Proxy with a function target so tagged template literals work at runtime,
+// while TypeScript sees the correct NeonQueryFunction type.
+const sql = new Proxy(
+  (() => {}) as unknown as NeonQueryFunction<false, false>,
+  {
+    apply(_t, _ctx, args) {
+      return (getSql() as unknown as (...a: unknown[]) => unknown)(...args);
+    },
+    get(_t, prop) {
+      const db = getSql();
+      return (db as unknown as Record<string | symbol, unknown>)[prop];
+    },
+  }
+) as NeonQueryFunction<false, false>;
 
 let dbInitialized = false;
 
