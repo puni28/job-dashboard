@@ -26,6 +26,7 @@ type Job = {
   job_url: string | null;
   location: string | null;
   notes: string | null;
+  email_thread_id: string | null;
   updates: JobUpdate[];
 };
 
