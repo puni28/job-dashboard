@@ -5,7 +5,9 @@ import Header from '@/components/Header';
 import JobBoard from '@/components/JobBoard';
 import JobModal from '@/components/JobModal';
 import SyncToast from '@/components/SyncToast';
-import { Mail, ArrowRight, Shield, Zap, RefreshCw } from 'lucide-react';
+import FindJobs from '@/components/FindJobs';
+import LikedJobs from '@/components/LikedJobs';
+import { Mail, ArrowRight, Shield, Zap, RefreshCw, Search, Heart, LayoutDashboard } from 'lucide-react';
 
 type JobUpdate = {
   id: number;
@@ -30,6 +32,13 @@ type Job = {
 };
 
 type Toast = { message: string; type: 'success' | 'error' | 'info' };
+type Tab = 'find' | 'liked' | 'tracker';
+
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: 'find', label: 'Find Jobs', icon: Search },
+  { id: 'liked', label: 'Liked Jobs', icon: Heart },
+  { id: 'tracker', label: 'My Applications', icon: LayoutDashboard },
+];
 
 export default function Home() {
   const [connected, setConnected] = useState(false);
@@ -41,6 +50,7 @@ export default function Home() {
   const [showModal, setShowModal] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>('find');
 
   const showToast = (message: string, type: Toast['type']) => {
     setToast({ message, type });
@@ -67,15 +77,12 @@ export default function Home() {
     const init = async () => {
       setLoading(true);
       const isConnected = await fetchStatus();
-      if (isConnected) {
-        await fetchJobs();
-      }
+      if (isConnected) await fetchJobs();
       setLoading(false);
 
-      // Check URL params for feedback
       const params = new URLSearchParams(window.location.search);
       if (params.get('connected') === 'true') {
-        showToast('Gmail connected! Click "Sync Emails" to import your applications.', 'success');
+        showToast('Gmail connected! Set up your Profile then fetch jobs.', 'success');
         window.history.replaceState({}, '', '/');
       } else if (params.get('error')) {
         showToast(`Connection failed: ${params.get('error')}`, 'error');
@@ -158,17 +165,6 @@ export default function Home() {
     setShowModal(true);
   };
 
-  const handleAddJob = () => {
-    setEditingJob(null);
-    setShowModal(true);
-  };
-
-  const handleCloseModal = () => {
-    setShowModal(false);
-    setEditingJob(null);
-  };
-
-  // Stats
   const stats = {
     total: jobs.length,
     active: jobs.filter(j => !['Rejected'].includes(j.status)).length,
@@ -196,23 +192,19 @@ export default function Home() {
         lastSynced={lastSynced}
         onSync={handleSync}
         onDisconnect={handleDisconnect}
-        onAddJob={handleAddJob}
+        onAddJob={() => { setEditingJob(null); setShowModal(true); }}
       />
 
       <main className="flex-1 flex flex-col p-6 gap-6 max-w-screen-2xl mx-auto w-full">
         {!connected ? (
-          /* Landing / Connect Screen */
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center max-w-2xl mx-auto">
               <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-600/20 border border-blue-500/30 rounded-2xl mb-6">
                 <Mail className="w-10 h-10 text-blue-400" />
               </div>
-              <h1 className="text-4xl font-bold text-white mb-4">
-                Job Application Tracker
-              </h1>
+              <h1 className="text-4xl font-bold text-white mb-4">Job Dashboard</h1>
               <p className="text-slate-400 text-lg mb-8 leading-relaxed">
-                Connect your Gmail to automatically detect job applications and track status
-                updates — all in one place, no manual entry needed.
+                Connect Gmail to get started. Browse job listings from multiple sources, generate tailored resumes and cover letters, and track your applications — all in one place.
               </p>
 
               <a
@@ -224,18 +216,16 @@ export default function Home() {
                 <ArrowRight className="w-5 h-5" />
               </a>
 
-              {/* Setup hint */}
               <p className="mt-4 text-sm text-slate-500">
                 Requires Google Cloud OAuth credentials.{' '}
                 <span className="text-slate-400">Copy <code className="bg-slate-800 px-1 rounded">.env.example</code> to <code className="bg-slate-800 px-1 rounded">.env</code> and add your credentials.</span>
               </p>
 
-              {/* Features */}
               <div className="mt-12 grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
                 {[
-                  { icon: Zap, title: 'Auto-detect', desc: 'Scans emails for application confirmations, interviews, and offers' },
-                  { icon: RefreshCw, title: 'Live updates', desc: 'Sync anytime to get the latest status from your inbox' },
-                  { icon: Shield, title: 'Private', desc: 'Data stored locally on your machine, never sent to third parties' },
+                  { icon: Search, title: 'Find Jobs', desc: 'Aggregates listings from Remotive, RemoteOK, The Muse, and We Work Remotely' },
+                  { icon: Zap, title: 'AI Tailored Docs', desc: 'One-click resume and cover letter tailored to each specific role using Claude AI' },
+                  { icon: Shield, title: 'Track Applications', desc: 'Kanban board synced from your Gmail inbox — know where every application stands' },
                 ].map(({ icon: Icon, title, desc }) => (
                   <div key={title} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
                     <Icon className="w-5 h-5 text-blue-400 mb-2" />
@@ -247,41 +237,62 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          /* Dashboard */
           <>
-            {/* Stats Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: 'Total', value: stats.total, color: 'text-slate-300' },
-                { label: 'Active', value: stats.active, color: 'text-blue-400' },
-                { label: 'Interviews', value: stats.interviews, color: 'text-purple-400' },
-                { label: 'Offers', value: stats.offers, color: 'text-green-400' },
-              ].map(stat => (
-                <div key={stat.label} className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-center">
-                  <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{stat.label}</div>
-                </div>
-              ))}
+            {/* Tabs */}
+            <div className="flex gap-1 bg-slate-800/50 border border-slate-700 p-1 rounded-xl w-fit">
+              {TABS.map(tab => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeTab === tab.id
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Kanban Board */}
-            <div className="flex-1">
-              <JobBoard jobs={jobs} onDelete={handleDelete} onEdit={handleEdit} />
-            </div>
+            {activeTab === 'find' && <FindJobs onShowToast={showToast} />}
+            {activeTab === 'liked' && <LikedJobs onShowToast={showToast} />}
+            {activeTab === 'tracker' && (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total', value: stats.total, color: 'text-slate-300' },
+                    { label: 'Active', value: stats.active, color: 'text-blue-400' },
+                    { label: 'Interviews', value: stats.interviews, color: 'text-purple-400' },
+                    { label: 'Offers', value: stats.offers, color: 'text-green-400' },
+                  ].map(stat => (
+                    <div key={stat.label} className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-center">
+                      <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">{stat.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex-1">
+                  <JobBoard jobs={jobs} onDelete={handleDelete} onEdit={handleEdit} />
+                </div>
+              </>
+            )}
           </>
         )}
       </main>
 
-      {/* Modal */}
       {showModal && (
         <JobModal
           job={editingJob}
-          onClose={handleCloseModal}
+          onClose={() => { setShowModal(false); setEditingJob(null); }}
           onSave={handleSaveJob}
         />
       )}
 
-      {/* Toast */}
       {toast && (
         <SyncToast
           message={toast.message}
