@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { getUserById, isEmailProcessed, markEmailProcessed, findJobByThreadId, createJob, updateJob, addJobUpdate, getJobsByUser } from '@/lib/db';
 import { fetchJobEmails } from '@/lib/gmail';
-import { classifyEmail, getStatusFromEmailType, getUpdateLabel } from '@/lib/emailParser';
+import { getStatusFromEmailType, getUpdateLabel } from '@/lib/emailParser';
+import { classifyEmailsBatch } from '@/lib/claudeClassifier';
 
 const STATUS_PRIORITY: Record<string, number> = {
   Applied: 1,
@@ -30,13 +31,22 @@ export async function POST() {
     // Sort oldest first so we process applications before updates
     emails.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    // Pre-filter already-processed emails, then batch-classify the rest with Claude
+    const unprocessed: typeof emails = [];
     for (const email of emails) {
       if (await isEmailProcessed(userId, email.id)) {
         skipped++;
-        continue;
+      } else {
+        unprocessed.push(email);
       }
+    }
 
-      const classification = classifyEmail(email);
+    const classifications = await classifyEmailsBatch(unprocessed);
+
+    for (let i = 0; i < unprocessed.length; i++) {
+      const email = unprocessed[i];
+      const classification = classifications[i];
+
       if (!classification.isJobRelated) {
         await markEmailProcessed(userId, email.id);
         skipped++;
