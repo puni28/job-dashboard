@@ -103,8 +103,12 @@ async function ensureInit() {
       salary_max INTEGER,
       exclude_keywords TEXT,
       include_keywords TEXT,
+      resume_file_text TEXT,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
+  `;
+  await sql`
+    ALTER TABLE user_profile ADD COLUMN IF NOT EXISTS resume_file_text TEXT
   `;
   await sql`
     CREATE TABLE IF NOT EXISTS job_listings (
@@ -313,6 +317,7 @@ export type UserProfile = {
   salary_max: number | null;
   exclude_keywords: string | null;
   include_keywords: string | null;
+  resume_file_text: string | null;
   updated_at: string;
 };
 
@@ -352,6 +357,15 @@ export async function upsertProfile(userId: number, data: Partial<Omit<UserProfi
   `;
   const rows = await sql`SELECT * FROM user_profile WHERE user_id = ${userId}`;
   return rows[0] as UserProfile;
+}
+
+export async function setResumeFileText(userId: number, text: string | null): Promise<void> {
+  await ensureInit();
+  await sql`
+    INSERT INTO user_profile (user_id, resume_file_text, updated_at)
+    VALUES (${userId}, ${text}, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET resume_file_text = EXCLUDED.resume_file_text, updated_at = NOW()
+  `;
 }
 
 // Job listings

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import SyncToast from '@/components/SyncToast';
-import { Save, RefreshCw, User, Briefcase, GraduationCap, Settings, Code } from 'lucide-react';
+import { Save, RefreshCw, User, Briefcase, GraduationCap, Settings, Code, Upload, Trash2, FileText, CheckCircle } from 'lucide-react';
 
 type Profile = {
   full_name: string;
@@ -83,6 +83,8 @@ export default function ProfilePage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [section, setSection] = useState<Section>('personal');
+  const [uploadedResumeChars, setUploadedResumeChars] = useState<number>(0);
+  const [uploading, setUploading] = useState(false);
 
   const showToast = (message: string, type: Toast['type']) => {
     setToast({ message, type });
@@ -98,9 +100,12 @@ export default function ProfilePage() {
   }, [router]);
 
   const fetchProfile = useCallback(async () => {
-    const res = await fetch('/api/profile');
-    if (res.ok) {
-      const data = await res.json();
+    const [profileRes, resumeRes] = await Promise.all([
+      fetch('/api/profile'),
+      fetch('/api/profile/resume'),
+    ]);
+    if (profileRes.ok) {
+      const data = await profileRes.json();
       if (data.profile) {
         setProfile(p => ({
           ...p,
@@ -109,6 +114,10 @@ export default function ProfilePage() {
           ),
         }));
       }
+    }
+    if (resumeRes.ok) {
+      const data = await resumeRes.json();
+      setUploadedResumeChars(data.chars ?? 0);
     }
   }, []);
 
@@ -146,6 +155,34 @@ export default function ProfilePage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/profile/resume', { method: 'POST', body: fd });
+      const data = await res.json();
+      if (res.ok) {
+        setUploadedResumeChars(data.chars);
+        showToast('Resume uploaded! It will be used as the base for tailoring.', 'success');
+      } else {
+        showToast(data.error || 'Upload failed', 'error');
+      }
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleResumeDelete = async () => {
+    if (!confirm('Remove your uploaded resume?')) return;
+    await fetch('/api/profile/resume', { method: 'DELETE' });
+    setUploadedResumeChars(0);
+    showToast('Resume removed.', 'info');
   };
 
   const handleDisconnect = async () => {
@@ -233,6 +270,65 @@ export default function ProfilePage() {
         {/* Resume Content */}
         {section === 'resume' && (
           <div className="bg-slate-800/40 border border-slate-700 rounded-xl p-6 flex flex-col gap-5">
+
+            {/* Resume Upload */}
+            <div className={`rounded-xl border p-4 flex flex-col gap-3 ${uploadedResumeChars > 0 ? 'border-green-500/30 bg-green-500/5' : 'border-slate-600 bg-slate-700/20'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className={`w-4 h-4 ${uploadedResumeChars > 0 ? 'text-green-400' : 'text-slate-400'}`} />
+                  <span className="text-sm font-medium text-slate-200">Upload Resume</span>
+                  {uploadedResumeChars > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded-full">
+                      <CheckCircle className="w-3 h-3" />
+                      Uploaded
+                    </span>
+                  )}
+                </div>
+                {uploadedResumeChars > 0 && (
+                  <button
+                    onClick={handleResumeDelete}
+                    className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              {uploadedResumeChars > 0 ? (
+                <p className="text-xs text-slate-400">
+                  Your resume is stored ({(uploadedResumeChars / 1000).toFixed(1)}k chars). When you generate a tailored resume, AI will rewrite it to match the job description.
+                </p>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Upload your current resume (PDF or TXT). AI will tailor it to each job description instead of generating one from scratch.
+                </p>
+              )}
+
+              <label className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium cursor-pointer transition-colors ${
+                uploading
+                  ? 'border-slate-600 text-slate-500 opacity-50 cursor-not-allowed'
+                  : 'border-blue-500/40 text-blue-400 hover:bg-blue-500/10'
+              }`}>
+                {uploading ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Uploading...</>
+                ) : (
+                  <><Upload className="w-4 h-4" /> {uploadedResumeChars > 0 ? 'Replace Resume' : 'Choose File (PDF or TXT)'}</>
+                )}
+                <input
+                  type="file"
+                  accept=".pdf,.txt,application/pdf,text/plain"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={handleResumeUpload}
+                />
+              </label>
+            </div>
+
+            <div className="border-t border-slate-700/50 pt-1">
+              <p className="text-xs text-slate-500 mb-4">The fields below are also used for job matching scores and cover letter generation. Keep them updated even if you upload a resume.</p>
+            </div>
+
             <Field
               label="Professional Summary"
               name="summary"

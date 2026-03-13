@@ -30,7 +30,9 @@ export async function POST(req: NextRequest) {
 
   let prompt: string;
   if (type === 'resume') {
-    prompt = buildResumePrompt(profileText, jobText);
+    prompt = profile.resume_file_text
+      ? buildTailorResumePrompt(profile.resume_file_text, jobText)
+      : buildResumePrompt(profileText, jobText);
   } else {
     prompt = buildCoverLetterPrompt(profileText, jobText);
   }
@@ -135,6 +137,30 @@ PROJECTS (if relevant)
 
 CERTIFICATIONS (if any)
 [Certification name]`;
+}
+
+function buildTailorResumePrompt(resumeText: string, job: string): string {
+  return `You are an expert resume writer. The candidate has provided their existing resume. Your job is to tailor it specifically for the job posting below — rewriting, reordering, and emphasizing the most relevant experience and skills without fabricating anything new.
+
+TAILORING RULES:
+- Keep all facts accurate — do not add experience, skills, or credentials that are not in the original resume
+- Reorder bullet points so the most relevant ones appear first under each role
+- Rewrite bullets to mirror the job description's language and keywords naturally
+- Update the summary/objective to target this specific role and company
+- Remove or de-emphasize experience that is clearly irrelevant to this role
+- Keep the same structure and sections as the original resume
+- Output clean plain text, ready to copy-paste
+
+---
+CANDIDATE'S CURRENT RESUME:
+${resumeText}
+
+---
+JOB POSTING:
+${job}
+
+---
+Now write the tailored resume:`;
 }
 
 function buildCoverLetterPrompt(profile: string, job: string): string {
