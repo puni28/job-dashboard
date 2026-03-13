@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Search, Filter, Eye, EyeOff } from 'lucide-react';
+import { RefreshCw, Search, Filter, Eye, EyeOff, Link, X, ChevronDown, ChevronUp } from 'lucide-react';
 import ListingCard from './ListingCard';
 
 type Listing = {
@@ -28,6 +28,10 @@ export default function FindJobs({ onShowToast }: Props) {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState('');
+  const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
   const [showDismissed, setShowDismissed] = useState(false);
   const [minScore, setMinScore] = useState(0);
@@ -64,6 +68,34 @@ export default function FindJobs({ onShowToast }: Props) {
       }
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportError('');
+    try {
+      const res = await fetch('/api/listings/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const listing = data.listing;
+        setListings(prev => {
+          const exists = prev.find(l => l.id === listing.id);
+          return exists ? prev.map(l => l.id === listing.id ? listing : l) : [listing, ...prev];
+        });
+        setImportUrl('');
+        setShowImport(false);
+        onShowToast(`Imported: ${listing.title} at ${listing.company}`, 'success');
+      } else {
+        setImportError(data.error || 'Import failed');
+      }
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -179,6 +211,59 @@ export default function FindJobs({ onShowToast }: Props) {
             {fetching ? 'Fetching...' : 'Fetch Jobs'}
           </button>
         </div>
+      </div>
+
+      {/* Import from URL */}
+      <div className="border border-slate-700 rounded-xl overflow-hidden">
+        <button
+          onClick={() => { setShowImport(v => !v); setImportError(''); }}
+          className="w-full flex items-center justify-between px-4 py-3 bg-slate-800/40 hover:bg-slate-800/60 transition-colors text-sm"
+        >
+          <div className="flex items-center gap-2 text-slate-300">
+            <Link className="w-4 h-4 text-blue-400" />
+            <span className="font-medium">Import from job URL</span>
+            <span className="text-xs text-slate-500">Paste a link to any job posting</span>
+          </div>
+          {showImport ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+
+        {showImport && (
+          <div className="px-4 pb-4 pt-3 border-t border-slate-700 bg-slate-800/20 flex flex-col gap-3">
+            <div className="flex gap-2">
+              <input
+                type="url"
+                placeholder="https://jobs.example.com/software-engineer-123"
+                value={importUrl}
+                onChange={e => { setImportUrl(e.target.value); setImportError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleImport()}
+                className="flex-1 bg-slate-800 border border-slate-600 text-slate-200 text-sm px-3 py-2 rounded-lg focus:outline-none focus:border-blue-500 placeholder-slate-500"
+                disabled={importing}
+              />
+              <button
+                onClick={handleImport}
+                disabled={importing || !importUrl.trim()}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg font-medium transition-colors"
+              >
+                {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Link className="w-4 h-4" />}
+                {importing ? 'Importing...' : 'Import'}
+              </button>
+              {importUrl && !importing && (
+                <button
+                  onClick={() => { setImportUrl(''); setImportError(''); }}
+                  className="p-2 text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {importError && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{importError}</p>
+            )}
+            <p className="text-xs text-slate-500">
+              Works with most job boards. If a page blocks automated access, try copying the job description into your profile instead.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Listings grid */}
