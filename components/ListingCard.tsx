@@ -1,6 +1,7 @@
 'use client';
 
-import { Heart, X, ExternalLink, MapPin, DollarSign, Tag, Zap } from 'lucide-react';
+import { useState } from 'react';
+import { Heart, X, ExternalLink, MapPin, DollarSign, Tag, Zap, FileText, Mail, RefreshCw } from 'lucide-react';
 
 type Listing = {
   id: number;
@@ -22,6 +23,7 @@ type Props = {
   listing: Listing;
   onLike: (id: number) => void;
   onDismiss: (id: number) => void;
+  onShowToast?: (msg: string, type: 'success' | 'error' | 'info') => void;
 };
 
 function daysAgo(dateStr: string | null): string | null {
@@ -45,11 +47,35 @@ function scoreColor(score: number): string {
   return 'text-slate-400 bg-slate-700/50 border-slate-600';
 }
 
-export default function ListingCard({ listing, onLike, onDismiss }: Props) {
+export default function ListingCard({ listing, onLike, onDismiss, onShowToast }: Props) {
   const isLiked = listing.userAction === 'liked';
   const isDismissed = listing.userAction === 'dismissed';
   const age = daysAgo(listing.posted_at);
   const tags = listing.tags?.split(',').map(t => t.trim()).filter(Boolean).slice(0, 4) ?? [];
+
+  const [generatingResume, setGeneratingResume] = useState(false);
+  const [generatingCL, setGeneratingCL] = useState(false);
+
+  const generate = async (type: 'resume' | 'cover_letter') => {
+    const setLoading = type === 'resume' ? setGeneratingResume : setGeneratingCL;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId: listing.id, type }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const label = type === 'resume' ? 'Resume' : 'Cover letter';
+        onShowToast?.(`${label} generated! Go to Liked Jobs to view it.`, 'success');
+      } else {
+        onShowToast?.(data.error || 'Generation failed', 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className={`bg-slate-800/60 border rounded-xl p-4 flex flex-col gap-3 transition-all ${
@@ -144,6 +170,28 @@ export default function ListingCard({ listing, onLike, onDismiss }: Props) {
           <ExternalLink className="w-3.5 h-3.5" />
         </a>
       </div>
+
+      {/* Generate buttons — shown when liked */}
+      {isLiked && (
+        <div className="flex gap-2 border-t border-blue-500/20 pt-3">
+          <button
+            onClick={() => generate('resume')}
+            disabled={generatingResume}
+            className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 transition-colors disabled:opacity-50"
+          >
+            {generatingResume ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            {generatingResume ? 'Generating...' : 'Generate Resume'}
+          </button>
+          <button
+            onClick={() => generate('cover_letter')}
+            disabled={generatingCL}
+            className="flex-1 flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/30 transition-colors disabled:opacity-50"
+          >
+            {generatingCL ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+            {generatingCL ? 'Generating...' : 'Generate Cover Letter'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

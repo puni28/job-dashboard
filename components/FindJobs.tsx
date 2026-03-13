@@ -206,6 +206,7 @@ export default function FindJobs({ onShowToast }: Props) {
               listing={listing}
               onLike={id => handleAction(id, 'liked')}
               onDismiss={id => handleAction(id, 'dismissed')}
+              onShowToast={onShowToast}
             />
           ))}
         </div>
