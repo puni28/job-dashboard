@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 import { setResumeFileText, getProfile } from '@/lib/db';
 
-// pdf-parse has a known Next.js compatibility issue with its default export path.
-// Importing from the lib file directly avoids the test-file require() side-effect.
+// pdf-parse is kept as a serverComponentsExternalPackage so webpack doesn't bundle it.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require('pdf-parse/lib/pdf-parse.js');
+const pdfParse = require('pdf-parse');
 
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
