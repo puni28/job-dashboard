@@ -6,6 +6,46 @@ import { scoreListings } from '@/lib/matcher';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Oracle Cloud HCM Candidate Experience URLs are SPAs; use their REST API instead.
+function parseOracleHCMUrl(parsedUrl: URL): { siteNumber: string; jobId: string } | null {
+  const m = parsedUrl.pathname.match(
+    /\/hcmUI\/CandidateExperience\/[^/]+\/sites\/([^/]+)\/jobs\/(?:preview\/)?(\d+)/
+  );
+  if (!m) return null;
+  return { siteNumber: m[1], jobId: m[2] };
+}
+
+async function fetchOracleHCMPageText(parsedUrl: URL, siteNumber: string, jobId: string): Promise<string | null> {
+  const apiUrl =
+    `${parsedUrl.origin}/hcmRestApi/resources/latest/recruitingCEJobRequisitions` +
+    `?expand=all&onlyData=true&finder=findReqs;siteNumber=${siteNumber},requisitionNumber=${jobId}`;
+
+  const res = await fetch(apiUrl, {
+    headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; JobDashboard/1.0)' },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) return null;
+
+  const data = await res.json();
+  const item = data?.items?.[0];
+  if (!item) return null;
+
+  // Flatten relevant fields into plain text for Claude to parse
+  const parts: string[] = [];
+  if (item.Title) parts.push(`Job Title: ${item.Title}`);
+  if (item.PrimaryLocation) parts.push(`Location: ${item.PrimaryLocation}`);
+  if (item.PostedOrganization) parts.push(`Company: ${item.PostedOrganization}`);
+  if (item.SalaryLow || item.SalaryHigh) {
+    parts.push(`Salary: ${item.SalaryLow ?? ''}${item.SalaryHigh ? ` - ${item.SalaryHigh}` : ''} ${item.Currency ?? ''}`.trim());
+  }
+  const desc: string = item.ExternalDescriptionStr ?? item.ShortDescriptionStr ?? item.ExternalDescription ?? '';
+  if (desc) parts.push(`Description: ${htmlToText(desc)}`);
+  if (item.Skills) parts.push(`Skills: ${item.Skills}`);
+  if (item.WorkplaceType) parts.push(`Workplace: ${item.WorkplaceType}`);
+
+  return parts.join('\n');
+}
+
 function htmlToText(html: string): string {
   return html
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -37,23 +77,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
   }
 
-  // Fetch the page
+  // Fetch page content — use platform-specific APIs for SPAs where available
   let pageText: string;
   try {
-    const res = await fetch(parsedUrl.toString(), {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; JobDashboard/1.0)',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) {
-      return NextResponse.json({ error: `Could not fetch the page (HTTP ${res.status}). Some job boards block automated access.` }, { status: 422 });
+    const oracleParams = parseOracleHCMUrl(parsedUrl);
+    if (oracleParams) {
+      const oracleText = await fetchOracleHCMPageText(parsedUrl, oracleParams.siteNumber, oracleParams.jobId);
+      if (oracleText && oracleText.length > 50) {
+        pageText = oracleText;
+      } else {
+        return NextResponse.json({ error: 'Could not retrieve job details from Oracle HCM API. The job may no longer be active.' }, { status: 422 });
+      }
+    } else {
+      const res = await fetch(parsedUrl.toString(), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; JobDashboard/1.0)',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) {
+        return NextResponse.json({ error: `Could not fetch the page (HTTP ${res.status}). Some job boards block automated access.` }, { status: 422 });
+      }
+      const html = await res.text();
+      pageText = htmlToText(html);
+      // Trim to ~12k chars to keep Claude prompt reasonable
+      if (pageText.length > 12000) pageText = pageText.slice(0, 12000);
     }
-    const html = await res.text();
-    pageText = htmlToText(html);
-    // Trim to ~12k chars to keep Claude prompt reasonable
-    if (pageText.length > 12000) pageText = pageText.slice(0, 12000);
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Network error';
     return NextResponse.json({ error: `Failed to fetch URL: ${msg}` }, { status: 422 });
